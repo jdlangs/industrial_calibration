@@ -24,6 +24,8 @@ using cv::CircleDetector;
 namespace industrial_extrinsic_cal
 {
 
+void normalizeImage(cv::Mat &img, int maxval);
+
 ROSCameraObserver::ROSCameraObserver(const std::string &camera_topic, const std::string &camera_name) :
   sym_circle_(true), pattern_(pattern_options::Chessboard), pattern_rows_(0), pattern_cols_(0), new_image_collected_(false), 
   store_observation_images_(false), load_observation_images_(false), image_directory_(""), image_number_(0), 
@@ -147,6 +149,10 @@ int ROSCameraObserver::getObservations(CameraObservations &cam_obs)
   ROS_DEBUG("roi size = %d %d", input_roi_.height, input_roi_.width);
   ROS_DEBUG("image size = %d %d", input_bridge_->image.rows, input_bridge_->image.cols);
   image_roi_ = input_bridge_->image(input_roi_);
+
+  //Do a normalization just on the subimage
+  normalizeImage(image_roi_, 255);
+
   ROS_DEBUG("image_roi_ size = %d %d", image_roi_.rows, image_roi_.cols);
   observation_pts_.clear();
   std::vector<cv::KeyPoint> key_points;
@@ -544,10 +550,21 @@ int ROSCameraObserver::getObservations(CameraObservations &cam_obs)
     observation_pts_[i].y += input_roi_.y;
   }
 
+  //draw ROI box
+  double xl = input_roi_.x;
+  double xh = xl + input_roi_.width;
+  double yl = input_roi_.y;
+  double yh = yl + input_roi_.height;
+
+  line(output_bridge_->image, cv::Point(xl,yl), cv::Point(xh,yl), cv::Scalar(255,0,0), 2);
+  line(output_bridge_->image, cv::Point(xh,yl), cv::Point(xh,yh), cv::Scalar(255,0,0), 2);
+  line(output_bridge_->image, cv::Point(xh,yh), cv::Point(xl,yh), cv::Scalar(255,0,0), 2);
+  line(output_bridge_->image, cv::Point(xl,yh), cv::Point(xl,yl), cv::Scalar(255,0,0), 2);
+
   // draw larger circle at large point
   large_point.x += input_roi_.x;
   large_point.y += input_roi_.y;
-  circle(input_bridge_->image, large_point, 3.0, 255, 5);
+  circle(output_bridge_->image, large_point, 3.0, 255, 5);
 
   // next block of code for publishing the roi as an image, when target is found, circles are placed on image, with a line between pt1 and pt2
   for(int i=0;i<(int)observation_pts_.size();i++){
@@ -555,10 +572,10 @@ int ROSCameraObserver::getObservations(CameraObservations &cam_obs)
     p.x = observation_pts_[i].x;
     p.y = observation_pts_[i].y;
     if(i==0){
-      circle(input_bridge_->image, p, 2.0, cv::Scalar(0,0,0), 5);
+      circle(output_bridge_->image, p, 2.0, cv::Scalar(0,0,0), 5);
     }
     else{
-      circle(input_bridge_->image,p,1.0,255,5);
+      circle(output_bridge_->image,p,1.0,255,5);
     }
   }
   
@@ -569,7 +586,7 @@ int ROSCameraObserver::getObservations(CameraObservations &cam_obs)
     p1.y = observation_pts_[start_1st_row].y;
     p2.x = observation_pts_[end_1st_row].x;
     p2.y = observation_pts_[end_1st_row].y;
-    line(input_bridge_->image,p1,p2,255,3);
+    line(output_bridge_->image,p1,p2,255,3);
   }
 
   if(successful_find){    // copy the points found into a camera observation structure indicating their corresponece with target points
@@ -591,10 +608,10 @@ int ROSCameraObserver::getObservations(CameraObservations &cam_obs)
     cv::Point p;
     p.x = image_roi_.cols/2;
     p.y = image_roi_.rows/2;
-    circle(input_bridge_->image,p,1.0,255,10);
+    circle(output_bridge_->image,p,1.0,255,10);
   }  
 
-  debug_pub_.publish(input_bridge_->toImageMsg());
+  debug_pub_.publish(output_bridge_->toImageMsg());
   out_bridge_->image = image_roi_;
   results_pub_.publish(out_bridge_->toImageMsg());
 
@@ -870,6 +887,13 @@ void  ROSCameraObserver::dynReConfCallBack(industrial_extrinsic_cal::circle_grid
 
 
     blob_detector_ptr_ = cv::SimpleBlobDetector::create(blob_params);
+}
+
+void normalizeImage(cv::Mat &img, int maxval)
+{
+    cv::Mat norm_img = img.clone();
+    cv::normalize(img, norm_img, 0, maxval, cv::NORM_MINMAX);
+    img = norm_img;
 }
 
 } //industrial_extrinsic_cal
